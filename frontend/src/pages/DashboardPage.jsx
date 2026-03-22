@@ -1,0 +1,91 @@
+import styles from './DashboardPage.module.css'
+import ProfilePanel from '../components/ProfilePanel.jsx'
+import SkillsPanel from '../components/SkillsPanel.jsx'
+import JobRolesPanel from '../components/JobRolesPanel.jsx'
+import GapPanel from '../components/GapPanel.jsx'
+import CoursesPanel from '../components/CoursesPanel.jsx'
+import JobsPanel from '../components/JobsPanel.jsx'
+import PipelinePanel from '../components/PipelinePanel.jsx'
+
+const TABS = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'roles', label: 'Job Roles' },
+  { id: 'gap', label: 'Skill Gaps' },
+  { id: 'courses', label: 'Courses' },
+  { id: 'jobs', label: 'Live Jobs' },
+  { id: 'pipeline', label: 'NLP Pipeline' },
+]
+
+export default function DashboardPage({ analysis, activeTab, setActiveTab, onReset }) {
+  const { entities, skills, job_roles, gaps, courses, jobs } = analysis
+  const bestRole = job_roles?.best_match?.role || 'N/A'
+  const skillCount = skills?.skill_count || 0
+  const matchScore = job_roles?.best_match?.score || 0
+
+  return (
+    <div className={styles.page}>
+      {/* Top bar */}
+      <header className={styles.header}>
+        <div className={styles.logo}>
+          <span className={styles.logoMark}>M</span>
+          <span className={styles.logoText}>MargDarshak</span>
+        </div>
+
+        <div className={styles.headerStats}>
+          <div className={styles.statPill}>
+            <span className={styles.statVal}>{skillCount}</span>
+            <span className={styles.statLbl}>skills found</span>
+          </div>
+          <div className={styles.statPill}>
+            <span className={styles.statVal}>{matchScore}%</span>
+            <span className={styles.statLbl}>best match</span>
+          </div>
+          <div className={styles.statPillAccent}>
+            <span className={styles.statVal}>{bestRole}</span>
+          </div>
+        </div>
+
+        <button className={styles.resetBtn} onClick={onReset}>
+          Analyze another
+        </button>
+      </header>
+
+      {/* Name banner */}
+      {entities?.name && (
+        <div className={styles.nameBanner}>
+          <span>Analysis for</span>
+          <strong>{entities.name}</strong>
+          {entities.location && <span className={styles.location}>{entities.location}</span>}
+        </div>
+      )}
+
+      {/* Tab navigation */}
+      <nav className={styles.tabs}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            className={`${styles.tab} ${activeTab === tab.id ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+            {tab.id === 'pipeline' && (
+              <span className={styles.tabBadge}>Demo</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* Tab content */}
+      <main className={styles.content}>
+        {activeTab === 'profile' && <ProfilePanel analysis={analysis} />}
+        {activeTab === 'skills' && <SkillsPanel skills={skills} />}
+        {activeTab === 'roles' && <JobRolesPanel jobRoles={job_roles} />}
+        {activeTab === 'gap' && <GapPanel gaps={gaps} jobRoles={job_roles} />}
+        {activeTab === 'courses' && <CoursesPanel courses={courses} gaps={gaps} />}
+        {activeTab === 'jobs' && <JobsPanel jobs={jobs} analysis={analysis} />}
+        {activeTab === 'pipeline' && <PipelinePanel pipeline={analysis.pipeline} />}
+      </main>
+    </div>
+  )
+}

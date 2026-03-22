@@ -1,0 +1,172 @@
+.container { display: flex; flex-direction: column; gap: 14px; }
+
+.searchCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+}
+
+.searchTitle {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.searchRow { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+
+.searchField { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 180px; }
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inputRow { display: flex; flex-direction: column; gap: 6px; }
+
+.input {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.input:focus { border-color: var(--orange); background: var(--bg-hover); }
+
+.quickRoles { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.quickBtn {
+  padding: 3px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.quickBtn:hover { border-color: var(--orange); color: var(--orange); }
+.quickBtnActive { background: var(--orange); color: #000; border-color: var(--orange); font-weight: 600; }
+
+.searchBtn {
+  padding: 10px 20px;
+  background: var(--orange);
+  color: #000;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.88rem;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  height: 38px;
+}
+
+.searchBtn:hover:not(:disabled) { background: var(--orange-dark); }
+.searchBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.errorBanner {
+  padding: 10px 14px;
+  background: var(--error-dim);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  font-size: 0.85rem;
+}
+
+.statusBar { font-size: 0.82rem; color: var(--text-muted); padding: 6px 2px; }
+
+.mockNote {
+  color: var(--warning);
+  background: var(--warning-dim);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--warning-border);
+  display: inline-block;
+}
+
+.resultCount { color: var(--text-secondary); }
+
+.jobList { display: flex; flex-direction: column; gap: 10px; }
+
+.jobCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  display: block;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.jobCard:hover {
+  border-color: var(--orange-border);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.jobHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.jobTitle {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: 3px;
+}
+
+.jobCompany { font-size: 0.82rem; color: var(--text-secondary); }
+
+.jobMeta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+
+.jobSalary { font-size: 0.82rem; font-weight: 600; color: var(--success); }
+
+.jobLocation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.jobDesc { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px; }
+
+.jobFooter { display: flex; align-items: center; justify-content: space-between; }
+
+.jobDate { font-size: 0.75rem; color: var(--text-faint); }
+
+.applyLink {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--orange);
+}
+
+.empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
