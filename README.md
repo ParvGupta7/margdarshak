@@ -1,137 +1,93 @@
 # MargDarshak — AI Resume Analyzer & Career Guidance Platform
 
-An NLP-powered platform that analyzes resumes through a demonstrable 9-step pipeline,
-identifies skills, classifies job roles, finds skill gaps, recommends courses, and
-matches live job listings.
+MargDarshak is an NLP-powered resume analysis platform that processes your resume through a transparent 9-step pipeline — identifying skills, classifying job roles, finding skill gaps, recommending free courses, and matching live job listings in under 30 seconds.
 
 ---
 
-## Prerequisites
+## Features
 
-- macOS with Homebrew
-- Python 3.11+
+- **Resume Parsing** — Extracts raw text from PDF using pdfminer.six
+- **NLP Preprocessing** — 7-stage pipeline: lowercase → unicode cleanup → punctuation removal → whitespace normalization → tokenization → stopword removal → lemmatization
+- **Entity Extraction** — Regex for email, phone, LinkedIn, GitHub. spaCy NER for name and location with Indian city fallback
+- **Skill Extraction** — Exact word-boundary matching against 500+ skills across 15 categories
+- **Job Role Classification** — Cosine similarity on skill vectors against O*NET-aligned role definitions
+- **Skill Gap Analysis** — Set subtraction between required skills and resume skills
+- **Course Recommendations** — Missing skills mapped to free Coursera, freeCodeCamp, and official doc resources
+- **Live Job Matching** — Real-time listings from Adzuna API filtered by role and location
+- **Career Chatbot** — Fully local intent classification across 9 intents, no external API
+- **Pipeline Transparency** — Every step's output visible in the UI for demonstration
+
+---
+
+## NLP Pipeline
+
+| Step | File | Method | Library |
+|---|---|---|---|
+| 1. Text Extraction | extractor.py | LAParams PDF parsing | pdfminer.six |
+| 2. Preprocessing | preprocessor.py | 7-stage NLP pipeline | NLTK |
+| 3. Entity Extraction | parser.py | Regex + Named Entity Recognition | re, spaCy |
+| 4. Skill Extraction | skill_extractor.py | Exact string matching with word boundaries | Python re |
+| 5. Job Classification | job_classifier.py | Cosine similarity on binary skill vectors | scikit-learn, numpy |
+| 6. Gap Analysis | gap_analyzer.py | Set subtraction | Python sets |
+| 7. Course Mapping | course_recommender.py | Dictionary lookup with partial match fallback | — |
+| 8. Job Matching | job_matcher.py | REST API call | requests |
+| 9. Chatbot | bot.py | Keyword-based intent classification | — |
+
+Job role skill requirements are aligned with **O*NET Online** (U.S. Department of Labor, onetonline.org).
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python, FastAPI, Uvicorn |
+| NLP | NLTK, spaCy (en_core_web_sm), scikit-learn |
+| PDF Parsing | pdfminer.six |
+| Frontend | React 18, Vite, CSS Modules |
+| Jobs API | Adzuna |
+| Deployment | Render (backend), Vercel (frontend) |
+
+---
+
+## Local Setup
+
+### Prerequisites
+- Python 3.11 or 3.12
 - Node.js 18+
 
-Install if not present:
+### Backend
 
 ```bash
-# Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Python
-brew install python@3.11
-
-# Node
-brew install node
-```
-
----
-
-## Step 1 — Get API Keys (Both Free)
-
-### Anthropic (Claude) — for the chatbot
-1. Go to https://console.anthropic.com
-2. Sign up or log in
-3. Click "API Keys" in the left sidebar
-4. Click "Create Key" — copy it
-
-### Adzuna — for live job listings
-1. Go to https://developer.adzuna.com
-2. Click "Register" — fill in the form (free)
-3. After login, go to "Dashboard" → "Create Application"
-4. You get an App ID and App Key — copy both
-
----
-
-## Step 2 — Backend Setup
-
-Open a terminal and run these commands one by one:
-
-```bash
-# Navigate into the backend folder
-cd margdarshak/backend
-
-# Create a Python virtual environment
+cd backend
 python3 -m venv venv
-
-# Activate it (you must do this every time you open a new terminal)
 source venv/bin/activate
-
-# Install all Python dependencies
 pip install -r requirements.txt
-
-# Download the spaCy English language model
 python -m spacy download en_core_web_sm
-
-# Download NLTK data
 python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
-```
-
-### Create your .env file
-
-```bash
 cp .env.example .env
-```
-
-Open `.env` in VS Code and fill in your keys:
-
-```
-ANTHROPIC_API_KEY=sk-ant-...your key here...
-ADZUNA_APP_ID=...your id here...
-ADZUNA_APP_KEY=...your key here...
-```
-
-### Start the backend
-
-```bash
-# Make sure you are in margdarshak/backend with venv activated
+# Add your Adzuna API keys to .env
 python main.py
 ```
 
-You should see:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-INFO:     Application startup complete.
-```
-
-Leave this terminal running. Open a new terminal for the frontend.
-
----
-
-## Step 3 — Frontend Setup
-
-Open a new terminal tab (Command + T in Terminal or iTerm):
+### Frontend
 
 ```bash
-# Navigate to the frontend folder
-cd margdarshak/frontend
-
-# Install JavaScript dependencies
+cd frontend
 npm install
-
-# Start the development server
 npm run dev
 ```
 
-You should see:
+Open http://localhost:5173
+
+### Environment Variables
+
 ```
-VITE ready in Xms
-Local: http://localhost:5173/
+ADZUNA_APP_ID=your_app_id
+ADZUNA_APP_KEY=your_app_key
 ```
 
-Open http://localhost:5173 in your browser.
-
----
-
-## Step 4 — Test It
-
-1. Open http://localhost:5173
-2. Upload a PDF resume (drag and drop or click)
-3. Click "Analyze Resume"
-4. Wait ~15-20 seconds for the full pipeline to run
-5. Explore all tabs — Profile, Skills, Job Roles, Skill Gaps, Courses, Live Jobs
-6. Click the "NLP Pipeline" tab to see each step's output (good for teacher demo)
-7. Use the chatbot (bottom right) to ask questions about the resume
+Get free Adzuna API keys at developer.adzuna.com (10,000 calls/month free).
 
 ---
 
@@ -140,103 +96,29 @@ Open http://localhost:5173 in your browser.
 ```
 margdarshak/
 ├── backend/
-│   ├── main.py                    # FastAPI server — all routes
+│   ├── main.py
 │   ├── requirements.txt
-│   ├── .env.example               # Copy to .env and add your keys
 │   ├── pipeline/
-│   │   ├── extractor.py           # Step 1: PDF text extraction (pdfminer.six)
-│   │   ├── preprocessor.py        # Step 2: NLP preprocessing (NLTK)
-│   │   ├── parser.py              # Step 3: Entity extraction (Regex + spaCy)
-│   │   ├── skill_extractor.py     # Step 4: Skill mapping (fuzzywuzzy)
-│   │   ├── job_classifier.py      # Step 5: Role classification (scikit-learn)
-│   │   ├── gap_analyzer.py        # Step 6: Skill gap analysis (set ops)
-│   │   ├── course_recommender.py  # Step 7: Course recommendations
-│   │   └── job_matcher.py         # Step 8: Live jobs (Adzuna API)
+│   │   ├── extractor.py
+│   │   ├── preprocessor.py
+│   │   ├── parser.py
+│   │   ├── skill_extractor.py
+│   │   ├── job_classifier.py
+│   │   ├── gap_analyzer.py
+│   │   ├── course_recommender.py
+│   │   └── job_matcher.py
 │   ├── chatbot/
-│   │   └── bot.py                 # Step 9: Chatbot (Claude API)
+│   │   └── bot.py
 │   └── data/
-│       ├── skills_db.py           # 500+ skills across 15 categories
-│       ├── job_roles.py           # 12 job roles with required/preferred skills
-│       └── courses_db.py          # Skill → free course mapping
-│
+│       ├── skills_db.py
+│       ├── job_roles.py
+│       └── courses_db.py
 └── frontend/
     └── src/
-        ├── App.jsx
         ├── pages/
-        │   ├── UploadPage.jsx     # Landing + drag-and-drop upload
-        │   └── DashboardPage.jsx  # Results dashboard with tabs
         └── components/
-            ├── ProfilePanel.jsx   # Contact info + role summary
-            ├── SkillsPanel.jsx    # Categorized skills with match method
-            ├── JobRolesPanel.jsx  # Ranked job roles with scores
-            ├── GapPanel.jsx       # Missing skills per role
-            ├── CoursesPanel.jsx   # Free course links per missing skill
-            ├── JobsPanel.jsx      # Live job listings
-            ├── PipelinePanel.jsx  # NLP pipeline demo view
-            └── Chatbot.jsx        # Floating chatbot panel
 ```
 
 ---
 
-## NLP Pipeline Summary (for your teacher)
-
-| Step | File | Method | Libraries |
-|------|------|--------|-----------|
-| 1. Text Extraction | extractor.py | LAParams-based PDF parsing | pdfminer.six |
-| 2. Preprocessing | preprocessor.py | 7-stage NLP pipeline | NLTK |
-| 3. Entity Extraction | parser.py | Regex + Named Entity Recognition | re, spaCy |
-| 4. Skill Extraction | skill_extractor.py | Exact + fuzzy string matching | fuzzywuzzy |
-| 5. Job Classification | job_classifier.py | Cosine similarity on skill vectors | scikit-learn, numpy |
-| 6. Gap Analysis | gap_analyzer.py | Set subtraction | Python sets |
-| 7. Course Recommendation | course_recommender.py | Dictionary lookup + partial match | — |
-| 8. Job Matching | job_matcher.py | REST API call | requests |
-| 9. Chatbot | bot.py | Intent classification + LLM | anthropic |
-
----
-
-## Common Issues
-
-**"spaCy model not found"**
-```bash
-python -m spacy download en_core_web_sm
-```
-
-**"Module not found" errors**
-Make sure your virtual environment is activated:
-```bash
-source venv/bin/activate
-```
-
-**"No text found in PDF"**
-The PDF may be image-based (scanned). Use a text-based PDF resume.
-
-**Jobs show placeholder instead of real listings**
-Your Adzuna keys are not in `.env`. Add them and restart the backend.
-
-**Chatbot says "not configured"**
-Your Anthropic key is not in `.env`. Add it and restart the backend.
-
-**Frontend can't reach backend**
-Make sure the backend is running on port 8000. Check for error messages in the backend terminal.
-
----
-
-## Deployment (after local testing works)
-
-### Backend → Render.com (free)
-1. Push your code to a GitHub repository
-2. Go to render.com → "New Web Service"
-3. Connect your GitHub repo, set Root Directory to `backend`
-4. Build command: `pip install -r requirements.txt && python -m spacy download en_core_web_sm`
-5. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-6. Add environment variables (your keys) in the Render dashboard
-
-### Frontend → Vercel (free)
-1. Go to vercel.com → "New Project"
-2. Import your GitHub repo, set Root Directory to `frontend`
-3. In `frontend/src/utils/api.js`, change `BASE_URL` to your Render backend URL
-4. Deploy
-
----
-
-Built with FastAPI, React, NLTK, spaCy, scikit-learn, pdfminer.six, and the Anthropic Claude API.
+*Built with FastAPI, React, NLTK, spaCy, scikit-learn, and pdfminer.six*
