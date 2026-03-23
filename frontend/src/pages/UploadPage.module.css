@@ -342,3 +342,10 @@
   .heroTitle { font-size: 1.8rem; }
   .pipelineGrid { grid-template-columns: 1fr; }
 }
+
+.logoImg {
+  height: 80px;
+  width: auto;
+  object-fit: contain;
+}
+

@@ -200,3 +200,8 @@
   .tabs { padding: 0 16px; }
   .content { padding: 20px 16px 80px; }
 }
+.logoImg {
+  height: 80px;
+  width: auto;
+  object-fit: contain;
+}

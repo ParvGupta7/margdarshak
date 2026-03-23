@@ -6,6 +6,8 @@ const SUGGESTED_QUESTIONS = [
   'What is my best job match?',
   'Which skills am I missing?',
   'What courses should I start with?',
+  'How can I improve my profile?',
+  'What is the salary range for my role?',
   'Show my contact details',
 ]
 

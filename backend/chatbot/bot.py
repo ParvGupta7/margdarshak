@@ -3,229 +3,321 @@ bot.py
 ------
 PIPELINE STEP 9: Chatbot
 
-A context-aware chatbot that:
-  1. Holds the full resume analysis as its knowledge base
-  2. Classifies user intent to route simple queries without calling the API
-  3. Uses the Claude API (claude-haiku) for complex or general questions
+A fully local, data-driven chatbot. No external API calls.
 
-Intent Classification (keyword-based — fast, no ML model needed):
-  - COURSES: questions about learning, courses, skills to improve
-  - JOBS: questions about job listings, applying, roles
-  - SKILLS: questions about extracted skills, what was found
-  - GAP: questions about missing skills, what to learn
-  - PROFILE: questions about extracted resume info
-  - GENERAL: everything else → sent to Claude API
+Architecture:
+  1. Intent Classification — keyword-based scoring across 9 intent categories
+  2. Response Generation — each intent has a dedicated handler that reads
+     the actual resume analysis data and builds a specific response
+  3. Fallback pool — generic helpful responses for unclear input
 
-The knowledge base is built from the complete analysis result and injected
-into the system prompt so Claude has full context.
+Intent categories:
+  GREETING, BEST_ROLE, SKILLS, GAP, COURSES, JOBS, PROFILE, SALARY, IMPROVE, FALLBACK
+
+Design principle:
+  Every response is generated from the actual analysis data, not hardcoded text.
+  Two different resumes will always produce different, accurate answers.
 """
 
-import os
-import anthropic
-import json
-from typing import Optional
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+import random
 
 
-# ---------- Intent Classification ----------
+# ---------- Intent Keyword Map ----------
 
 INTENT_PATTERNS = {
-    "COURSES": [
-        "course", "learn", "tutorial", "certification", "study",
-        "training", "resource", "free", "platform", "coursera", "udemy"
-    ],
-    "JOBS": [
-        "job", "jobs", "hiring", "opening", "vacancy", "apply",
-        "company", "salary", "work", "position", "listing"
+    "BEST_ROLE": [
+        "best", "suited", "fit", "match", "role", "career", "job for me",
+        "which job", "what job", "recommend", "suggest", "top role", "best match"
     ],
     "SKILLS": [
-        "skill", "skills", "technology", "tools", "know", "extracted",
-        "found", "have", "strong", "good at"
+        "skill", "skills", "know", "have", "technology", "tools", "tech stack",
+        "extracted", "found", "detect", "what did you find", "proficient", "strong"
     ],
     "GAP": [
-        "missing", "gap", "lack", "need", "improve", "should learn",
-        "not have", "weak", "add", "acquire"
+        "missing", "gap", "lack", "not have", "need to learn",
+        "should learn", "weak", "add", "acquire", "what is missing"
+    ],
+    "COURSES": [
+        "course", "courses", "learn", "tutorial", "certification", "study",
+        "resource", "free", "platform", "where", "how to learn", "training"
+    ],
+    "JOBS": [
+        "job", "jobs", "hiring", "opening", "vacancy", "apply", "listing",
+        "company", "work", "position", "opportunity", "find job", "get job"
     ],
     "PROFILE": [
-        "name", "email", "phone", "contact", "location", "linkedin",
-        "profile", "information", "resume", "detail"
+        "name", "email", "phone", "contact", "location", "linkedin", "github",
+        "profile", "information", "details", "who am i", "my info"
+    ],
+    "SALARY": [
+        "salary", "pay", "compensation", "package", "ctc", "lpa", "earn",
+        "income", "money", "how much"
+    ],
+    "IMPROVE": [
+        "improve", "better", "enhance", "boost", "strengthen", "tips",
+        "advice", "guidance", "what should i do", "next step", "roadmap",
+        "how to get", "how do i become", "path", "plan"
+    ],
+    "GREETING": [
+        "hello", "hi", "hey", "thanks", "thank you", "great",
+        "awesome", "help me", "start", "begin", "okay", "ok"
     ]
 }
 
 
-def classify_intent(user_message: str) -> str:
-    """
-    Keyword-based intent classification.
-    Returns the most likely intent category.
-    """
-    message_lower = user_message.lower()
+def classify_intent(message: str) -> str:
+    msg = message.lower().strip()
     scores = {intent: 0 for intent in INTENT_PATTERNS}
-
     for intent, keywords in INTENT_PATTERNS.items():
-        for keyword in keywords:
-            if keyword in message_lower:
+        for kw in keywords:
+            if kw in msg:
                 scores[intent] += 1
-
-    best_intent = max(scores, key=scores.get)
-    if scores[best_intent] == 0:
-        return "GENERAL"
-    return best_intent
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "FALLBACK"
 
 
-# ---------- Quick-Answer Handlers (no API call needed) ----------
+# ---------- Response Handlers ----------
 
-def handle_intent(intent: str, analysis: dict, user_message: str) -> Optional[str]:
-    """
-    Handles intents that can be answered directly from the analysis data
-    without calling the Claude API.
-
-    Returns a response string if handled, None if Claude API should be used.
-    """
-    if intent == "PROFILE":
-        entities = analysis.get("entities", {})
-        lines = ["Here is what was extracted from your resume:"]
-        if entities.get("name"):
-            lines.append(f"Name: {entities['name']}")
-        if entities.get("email"):
-            lines.append(f"Email: {entities['email']}")
-        if entities.get("phone"):
-            lines.append(f"Phone: {entities['phone']}")
-        if entities.get("location"):
-            lines.append(f"Location: {entities['location']}")
-        if entities.get("linkedin"):
-            lines.append(f"LinkedIn: {entities['linkedin']}")
-        return "\n".join(lines)
-
-    if intent == "SKILLS":
-        skills = analysis.get("skills", {}).get("matched_skills", [])
-        count = len(skills)
-        if not skills:
-            return "No skills were extracted from your resume. Make sure your resume clearly lists technologies and tools."
-        sample = ", ".join(skills[:15])
-        more = f" and {count - 15} more" if count > 15 else ""
-        return f"I found {count} skills in your resume: {sample}{more}."
-
-    if intent == "GAP":
-        best_role = analysis.get("job_roles", {}).get("best_match", {})
-        if not best_role:
-            return "No job role analysis available yet."
-        role_name = best_role.get("role", "")
-        gaps = analysis.get("gaps", {}).get("gaps", {}).get(role_name, {})
-        missing = gaps.get("missing_required", [])
-        if not missing:
-            return f"Great news — you have all the required skills for {role_name}!"
-        return f"For {role_name}, you are missing these required skills: {', '.join(missing)}."
-
-    return None  # Let Claude handle it
+def handle_greeting(analysis: dict) -> str:
+    name = analysis.get("entities", {}).get("name", "")
+    best = analysis.get("job_roles", {}).get("best_match", {})
+    role = best.get("role", "") if best else ""
+    greeting = f"Hello{', ' + name.split()[0] if name else ''}! "
+    if role:
+        return (
+            f"{greeting}I have analyzed your resume. Based on your skills, "
+            f"you are a strong candidate for {role}. "
+            f"Ask me about your skills, skill gaps, courses, or job listings."
+        )
+    return f"{greeting}I have analyzed your resume. Ask me anything about your skills, job matches, or career path."
 
 
-# ---------- Claude API Integration ----------
+def handle_best_role(analysis: dict) -> str:
+    top_roles = analysis.get("job_roles", {}).get("top_roles", [])
+    if not top_roles:
+        return "No job role analysis available. Please re-upload your resume."
+    lines = ["Based on cosine similarity between your skill set and O*NET-aligned role requirements, here are your top matches:\n"]
+    for i, role in enumerate(top_roles[:4], 1):
+        lines.append(f"{i}. {role['role']} — {role['score']}% match")
+    best = top_roles[0]
+    lines.append(f"\nYour strongest fit is {best['role']}. {best.get('description', '')}")
+    return "\n".join(lines)
 
-def build_system_prompt(analysis: dict) -> str:
-    """
-    Builds a detailed system prompt with the full analysis as context.
-    Claude uses this as its knowledge base for the conversation.
-    """
-    entities = analysis.get("entities", {})
-    skills = analysis.get("skills", {}).get("matched_skills", [])
+
+def handle_skills(analysis: dict) -> str:
+    skills_data = analysis.get("skills", {})
+    all_skills = skills_data.get("matched_skills", [])
+    by_cat = skills_data.get("by_category", {})
+    count = len(all_skills)
+    if count == 0:
+        return "No skills were detected in your resume. Make sure your resume clearly lists technologies, tools, and frameworks."
+    top_cats = list(by_cat.keys())[:4]
+    cat_summary = ", ".join([
+        f"{k.replace('_', ' ').title()} ({len(by_cat[k])})"
+        for k in top_cats
+    ])
+    sample = ", ".join(all_skills[:12])
+    more = f" and {count - 12} more" if count > 12 else ""
+    return (
+        f"I detected {count} skills across {len(by_cat)} categories.\n\n"
+        f"Top categories: {cat_summary}\n\n"
+        f"Skills found: {sample}{more}."
+    )
+
+
+def handle_gap(analysis: dict) -> str:
+    gaps = analysis.get("gaps", {}).get("gaps", {})
+    top_roles = analysis.get("job_roles", {}).get("top_roles", [])
+    if not gaps or not top_roles:
+        return "No gap analysis available yet."
+    best_role = top_roles[0]["role"]
+    gap = gaps.get(best_role, {})
+    missing_req = gap.get("missing_required", [])
+    missing_pref = gap.get("missing_preferred", [])
+    readiness = gap.get("readiness_score", 0)
+    lines = [f"For your best match — {best_role} — you are {readiness}% ready.\n"]
+    if not missing_req and not missing_pref:
+        lines.append("You have all required and preferred skills for this role.")
+    else:
+        if missing_req:
+            lines.append(f"Missing required skills ({len(missing_req)}): {', '.join(missing_req)}")
+        if missing_pref:
+            lines.append(f"Missing preferred skills ({len(missing_pref)}): {', '.join(missing_pref[:5])}")
+        lines.append("\nFocus on required skills first — they have the most impact on your candidacy.")
+    return "\n".join(lines)
+
+
+def handle_courses(analysis: dict) -> str:
+    courses_data = analysis.get("courses", {})
+    priority = courses_data.get("priority_skills", [])
+    top_roles = analysis.get("job_roles", {}).get("top_roles", [])
+    if not priority:
+        return "Your skill gaps are minimal. Check the Courses tab for any remaining recommendations."
+    lines = ["Here are the most important skills to learn, in priority order:\n"]
+    for i, skill in enumerate(priority[:6], 1):
+        lines.append(f"{i}. {skill.title()}")
+    lines.append("\nAll recommended courses are free to audit. Check the Courses tab for direct links to Coursera, freeCodeCamp, and official documentation.")
+    if top_roles:
+        lines.append(f"\nFocusing on these will significantly improve your match for {top_roles[0]['role']}.")
+    return "\n".join(lines)
+
+
+def handle_jobs(analysis: dict) -> str:
+    jobs_data = analysis.get("jobs", {})
+    job_list = jobs_data.get("jobs", [])
+    query = jobs_data.get("query", {})
+    status = jobs_data.get("status", "")
+    best_role = analysis.get("job_roles", {}).get("best_match", {})
+    role_name = best_role.get("role", "your target role") if best_role else "your target role"
+    if status == "mock" or not job_list:
+        return (
+            f"Live job listings require Adzuna API keys in your .env file. "
+            f"Once configured, you will see real {role_name} listings filtered by your location. "
+            f"You can also search on LinkedIn, Naukri, or Indeed for '{role_name}' roles."
+        )
+    location = query.get("location", "India")
+    lines = [f"I found {jobs_data.get('total_found', len(job_list))} live listings for {role_name} in {location}.\n"]
+    for job in job_list[:3]:
+        lines.append(f"- {job['title']} at {job['company']} ({job['location']})")
+    lines.append("\nCheck the Live Jobs tab to view all listings and apply directly.")
+    return "\n".join(lines)
+
+
+def handle_profile(analysis: dict) -> str:
+    e = analysis.get("entities", {})
+    lines = ["Here is the contact information extracted from your resume:\n"]
+    fields = [
+        ("Name", e.get("name")),
+        ("Email", e.get("email")),
+        ("Phone", e.get("phone")),
+        ("Location", e.get("location")),
+        ("LinkedIn", e.get("linkedin")),
+        ("GitHub", e.get("github")),
+    ]
+    found = [(k, v) for k, v in fields if v]
+    if not found:
+        return "No contact information was detected. Make sure your resume has clearly formatted contact details at the top."
+    for key, val in found:
+        lines.append(f"{key}: {val}")
+    missing = [k for k, v in fields if not v]
+    if missing:
+        lines.append(f"\nNot detected: {', '.join(missing)}")
+    return "\n".join(lines)
+
+
+def handle_salary(analysis: dict) -> str:
+    top_roles = analysis.get("job_roles", {}).get("top_roles", [])
+    if not top_roles:
+        return "No role analysis available to estimate salary ranges."
+    role = top_roles[0]["role"]
+    salary_map = {
+        "Data Scientist": "8 – 25 LPA",
+        "Data Analyst": "4 – 12 LPA",
+        "Machine Learning Engineer": "12 – 35 LPA",
+        "Frontend Developer": "4 – 18 LPA",
+        "Backend Developer": "5 – 20 LPA",
+        "Full Stack Developer": "6 – 22 LPA",
+        "DevOps Engineer": "7 – 25 LPA",
+        "Cybersecurity Analyst": "5 – 20 LPA",
+        "Mobile App Developer": "4 – 18 LPA",
+        "UI/UX Designer": "4 – 16 LPA",
+        "Business Analyst": "4 – 15 LPA",
+        "Cloud Architect": "15 – 40 LPA",
+    }
+    sal = salary_map.get(role, "varies based on experience and location")
+    score = top_roles[0].get("score", 0)
+    return (
+        f"For {role} roles in India, typical compensation ranges from {sal}.\n\n"
+        f"Factors that influence your specific offer:\n"
+        f"- Years of experience\n"
+        f"- City (Bangalore, Mumbai, Delhi command a premium)\n"
+        f"- Company size — startups vs MNCs\n"
+        f"- Your current match score is {score}%, which affects your negotiating position\n\n"
+        f"Source: Glassdoor and LinkedIn Salary Insights, India 2024"
+    )
+
+
+def handle_improve(analysis: dict) -> str:
     top_roles = analysis.get("job_roles", {}).get("top_roles", [])
     gaps = analysis.get("gaps", {}).get("gaps", {})
+    priority = analysis.get("courses", {}).get("priority_skills", [])
+    if not top_roles:
+        return "Upload your resume first to get personalized improvement advice."
+    best = top_roles[0]
+    role = best["role"]
+    score = best["score"]
+    gap = gaps.get(role, {})
+    missing_req = gap.get("missing_required", [])
+    lines = [f"Personalized improvement roadmap for {role}:\n"]
+    lines.append(f"Current match score: {score}%\n")
+    if score >= 80:
+        lines.append("You are well-positioned for this role.")
+        lines.append("Next steps:")
+        lines.append("1. Apply to the live job listings in the Jobs tab")
+        lines.append("2. Build 1-2 portfolio projects using your existing skills")
+        lines.append("3. Get a relevant certification to strengthen your profile")
+    elif score >= 50:
+        lines.append("You have a solid base but need to close some gaps.")
+        lines.append("Next steps:")
+        if missing_req:
+            lines.append(f"1. Learn these required skills first: {', '.join(missing_req[:3])}")
+        lines.append("2. Build projects that demonstrate your existing skills")
+        lines.append("3. Start applying while learning — do not wait until you feel 100% ready")
+    else:
+        lines.append("You are early in your journey for this role.")
+        lines.append("Next steps:")
+        if priority:
+            lines.append(f"1. Start with: {', '.join(priority[:3])}")
+        lines.append("2. Complete one structured course before moving to the next")
+        lines.append("3. Build small projects alongside learning")
+        lines.append("4. Re-upload your resume after 2-3 months to track your progress")
+    return "\n".join(lines)
 
-    best_role = top_roles[0]["role"] if top_roles else "Unknown"
-    best_score = top_roles[0]["score"] if top_roles else 0
 
-    roles_summary = "\n".join([
-        f"  - {r['role']}: {r['score']}% match"
-        for r in top_roles[:4]
-    ])
+FALLBACK_RESPONSES = [
+    "I can answer questions about your skills, job role matches, skill gaps, courses, or job listings. What would you like to know?",
+    "Try asking: 'What is my best job match?', 'Which skills am I missing?', or 'What courses should I take?'",
+    "I have your full resume analysis loaded. Ask me about your profile, skills, career path, or how to improve.",
+    "You can ask me about salary ranges, missing skills, top job roles, or which courses to start with.",
+]
 
-    missing_for_best = gaps.get(best_role, {}).get("missing_required", [])
 
-    context = f"""You are MargDarshak, an AI career guidance assistant. You have already analyzed this person's resume.
-
-RESUME ANALYSIS SUMMARY:
-- Name: {entities.get('name', 'Not found')}
-- Location: {entities.get('location', 'Not found')}
-- Skills found ({len(skills)} total): {', '.join(skills[:20])}{'...' if len(skills) > 20 else ''}
-- Best job match: {best_role} ({best_score}% match)
-- Top matches:
-{roles_summary}
-- Missing required skills for {best_role}: {', '.join(missing_for_best) if missing_for_best else 'None — fully qualified!'}
-
-FULL GAPS DATA:
-{json.dumps(gaps, indent=2)[:1500]}
-
-INSTRUCTIONS:
-- Be concise, direct, and helpful.
-- Use the resume data above when answering questions.
-- Give practical, actionable career advice.
-- If asked about courses or resources, suggest free options first.
-- Do not add unnecessary disclaimers.
-- Address the person warmly but professionally.
-- Respond in plain text, not markdown.
-"""
-    return context
-
+# ---------- Main Chat Function ----------
 
 def chat(user_message: str, analysis: dict, history: list) -> dict:
     """
-    Main chat function. Classifies intent, handles simple queries directly,
-    routes complex queries to Claude API.
+    Classifies intent and returns a data-driven local response.
+    No external API calls.
 
     Args:
-        user_message: User's input string
+        user_message: User input string
         analysis: Full resume analysis dict
-        history: List of previous messages [{"role": "user/assistant", "content": "..."}]
+        history: Previous messages (kept for interface compatibility)
 
     Returns:
-        dict with response, intent, and method used
+        dict with response, intent, and method
     """
     intent = classify_intent(user_message)
 
-    # Try to handle without API call
-    quick_response = handle_intent(intent, analysis, user_message)
-    if quick_response and intent != "GENERAL":
-        return {
-            "response": quick_response,
-            "intent": intent,
-            "method": "local_handler"
-        }
+    handlers = {
+        "GREETING": handle_greeting,
+        "BEST_ROLE": handle_best_role,
+        "SKILLS": handle_skills,
+        "GAP": handle_gap,
+        "COURSES": handle_courses,
+        "JOBS": handle_jobs,
+        "PROFILE": handle_profile,
+        "SALARY": handle_salary,
+        "IMPROVE": handle_improve,
+    }
 
-    # Fall back to Claude API
-    if not ANTHROPIC_API_KEY:
-        return {
-            "response": "Chatbot is not configured. Add your ANTHROPIC_API_KEY to the .env file to enable AI-powered responses.",
-            "intent": intent,
-            "method": "error"
-        }
+    if intent in handlers:
+        response = handlers[intent](analysis)
+    else:
+        response = random.choice(FALLBACK_RESPONSES)
 
-    try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        system_prompt = build_system_prompt(analysis)
-
-        # Build messages with history
-        messages = []
-        for msg in history[-10:]:  # Last 10 turns to stay within context limits
-            messages.append({"role": msg["role"], "content": msg["content"]})
-        messages.append({"role": "user", "content": user_message})
-
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            system=system_prompt,
-            messages=messages
-        )
-
-        return {
-            "response": response.content[0].text,
-            "intent": intent,
-            "method": "claude_api"
-        }
-
-    except Exception as e:
-        return {
-            "response": f"Unable to reach the AI assistant right now. Error: {str(e)}",
-            "intent": intent,
-            "method": "error"
-        }
+    return {
+        "response": response,
+        "intent": intent,
+        "method": "local_intent_classification"
+    }

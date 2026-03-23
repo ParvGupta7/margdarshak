@@ -28,8 +28,7 @@ export default function DashboardPage({ analysis, activeTab, setActiveTab, onRes
       {/* Top bar */}
       <header className={styles.header}>
         <div className={styles.logo}>
-          <span className={styles.logoMark}>M</span>
-          <span className={styles.logoText}>MargDarshak</span>
+          <img src="/margdarshak_logo.png" alt="MargDarshak" className={styles.logoImg} />
         </div>
 
         <div className={styles.headerStats}>

@@ -81,8 +81,7 @@ export default function UploadPage({ onAnalysisComplete }) {
       {/* Header */}
       <header className={styles.header}>
         <div className={styles.logo}>
-          <span className={styles.logoMark}>M</span>
-          <span className={styles.logoText}>MargDarshak</span>
+          <img src="/margdarshak_logo.png" alt="MargDarshak" className={styles.logoImg} />
         </div>
         <span className={styles.headerTag}>AI Career Guidance</span>
       </header>
