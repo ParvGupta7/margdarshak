@@ -1,28 +1,101 @@
 """
 bot.py
 ------
-PIPELINE STEP 9: Chatbot
-
-A fully local, data-driven chatbot. No external API calls.
+PIPELINE STEP 9: Chatbot with DistilBERT Intent Classification
 
 Architecture:
-  1. Intent Classification — keyword-based scoring across 9 intent categories
+  1. Intent Classification — fine-tuned DistilBERT model
+     (distilbert-base-uncased, fine-tuned on 630 career chatbot examples)
+     Falls back to keyword classifier if model is not available.
+
   2. Response Generation — each intent has a dedicated handler that reads
-     the actual resume analysis data and builds a specific response
-  3. Fallback pool — generic helpful responses for unclear input
+     the actual resume analysis data and builds a specific, accurate response.
 
-Intent categories:
-  GREETING, BEST_ROLE, SKILLS, GAP, COURSES, JOBS, PROFILE, SALARY, IMPROVE, FALLBACK
+Intent classes (9):
+  GREETING, BEST_ROLE, SKILLS, GAP, COURSES, JOBS, PROFILE, SALARY, IMPROVE
 
-Design principle:
-  Every response is generated from the actual analysis data, not hardcoded text.
-  Two different resumes will always produce different, accurate answers.
+Model location: backend/chatbot/intent_classifier/
 """
 
+import os
+import json
 import random
+from pathlib import Path
+
+# ── Model loading ─────────────────────────────────────────────────────────────
+
+MODEL_DIR = Path(__file__).parent / "intent_classifier"
+_model = None
+_tokenizer = None
+_label_map = None
+_device = None
 
 
-# ---------- Intent Keyword Map ----------
+def _load_model():
+    """
+    Loads the fine-tuned DistilBERT model on first call.
+    Uses lazy loading so startup time is not affected.
+    Falls back to keyword classifier if model files are missing.
+    """
+    global _model, _tokenizer, _label_map, _device
+
+    if _model is not None:
+        return True  # already loaded
+
+    if not MODEL_DIR.exists():
+        print(f"[bot.py] Model directory not found at {MODEL_DIR}. Using keyword fallback.")
+        return False
+
+    try:
+        import torch
+        from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
+
+        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        _tokenizer = DistilBertTokenizerFast.from_pretrained(str(MODEL_DIR))
+        _model = DistilBertForSequenceClassification.from_pretrained(str(MODEL_DIR))
+        _model.to(_device)
+        _model.eval()
+
+        with open(MODEL_DIR / "label_map.json") as f:
+            _label_map = json.load(f)
+
+        print(f"[bot.py] DistilBERT intent classifier loaded on {_device}.")
+        return True
+
+    except Exception as e:
+        print(f"[bot.py] Could not load DistilBERT model: {e}. Using keyword fallback.")
+        _model = None
+        return False
+
+
+def _classify_with_bert(message: str) -> tuple[str, float]:
+    """
+    Runs inference through the fine-tuned DistilBERT model.
+    Returns (intent_label, confidence_score).
+    """
+    import torch
+
+    inputs = _tokenizer(
+        message,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=64
+    )
+    inputs = {k: v.to(_device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = _model(**inputs)
+        probs = torch.softmax(outputs.logits, dim=1)
+        pred_idx = torch.argmax(probs, dim=1).item()
+        confidence = probs[0][pred_idx].item()
+
+    intent = _label_map["labels"][pred_idx]
+    return intent, round(confidence, 4)
+
+
+# ── Keyword fallback classifier (identical to original) ───────────────────────
 
 INTENT_PATTERNS = {
     "BEST_ROLE": [
@@ -65,7 +138,7 @@ INTENT_PATTERNS = {
 }
 
 
-def classify_intent(message: str) -> str:
+def _classify_with_keywords(message: str) -> str:
     msg = message.lower().strip()
     scores = {intent: 0 for intent in INTENT_PATTERNS}
     for intent, keywords in INTENT_PATTERNS.items():
@@ -73,10 +146,10 @@ def classify_intent(message: str) -> str:
             if kw in msg:
                 scores[intent] += 1
     best = max(scores, key=scores.get)
-    return best if scores[best] > 0 else "FALLBACK"
+    return best if scores[best] > 0 else "GREETING"
 
 
-# ---------- Response Handlers ----------
+# ── Response handlers ─────────────────────────────────────────────────────────
 
 def handle_greeting(analysis: dict) -> str:
     name = analysis.get("entities", {}).get("name", "")
@@ -281,43 +354,54 @@ FALLBACK_RESPONSES = [
     "You can ask me about salary ranges, missing skills, top job roles, or which courses to start with.",
 ]
 
+HANDLERS = {
+    "GREETING": handle_greeting,
+    "BEST_ROLE": handle_best_role,
+    "SKILLS":   handle_skills,
+    "GAP":      handle_gap,
+    "COURSES":  handle_courses,
+    "JOBS":     handle_jobs,
+    "PROFILE":  handle_profile,
+    "SALARY":   handle_salary,
+    "IMPROVE":  handle_improve,
+}
 
-# ---------- Main Chat Function ----------
+
+# ── Main chat function ────────────────────────────────────────────────────────
 
 def chat(user_message: str, analysis: dict, history: list) -> dict:
     """
-    Classifies intent and returns a data-driven local response.
-    No external API calls.
+    Classifies intent using fine-tuned DistilBERT, then generates
+    a data-driven response from the resume analysis.
+
+    Falls back to keyword classifier if the model is unavailable.
 
     Args:
         user_message: User input string
-        analysis: Full resume analysis dict
+        analysis: Full resume analysis dict from /analyze endpoint
         history: Previous messages (kept for interface compatibility)
 
     Returns:
-        dict with response, intent, and method
+        dict with response text, intent, confidence, and method used
     """
-    intent = classify_intent(user_message)
+    model_available = _load_model()
 
-    handlers = {
-        "GREETING": handle_greeting,
-        "BEST_ROLE": handle_best_role,
-        "SKILLS": handle_skills,
-        "GAP": handle_gap,
-        "COURSES": handle_courses,
-        "JOBS": handle_jobs,
-        "PROFILE": handle_profile,
-        "SALARY": handle_salary,
-        "IMPROVE": handle_improve,
-    }
+    if model_available:
+        intent, confidence = _classify_with_bert(user_message)
+        method = f"distilbert (confidence: {confidence:.2%})"
+    else:
+        intent = _classify_with_keywords(user_message)
+        confidence = None
+        method = "keyword_fallback"
 
-    if intent in handlers:
-        response = handlers[intent](analysis)
+    if intent in HANDLERS:
+        response = HANDLERS[intent](analysis)
     else:
         response = random.choice(FALLBACK_RESPONSES)
 
     return {
-        "response": response,
-        "intent": intent,
-        "method": "local_intent_classification"
+        "response":   response,
+        "intent":     intent,
+        "confidence": confidence,
+        "method":     method
     }

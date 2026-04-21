@@ -20,3 +20,4 @@ frontend/dist/
 # VS Code
 .vscode/
 .venv/
+backend/chatbot/intent_classifier/model.safetensors

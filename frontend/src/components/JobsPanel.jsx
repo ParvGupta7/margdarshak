@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { fetchJobs } from '../utils/api.js'
 import styles from './JobsPanel.module.css'
 
@@ -6,10 +6,34 @@ export default function JobsPanel({ jobs: initialJobs, analysis }) {
   const [jobs, setJobs] = useState(initialJobs)
   const [searchRole, setSearchRole] = useState(analysis?.job_roles?.best_match?.role || '')
   const [searchLocation, setSearchLocation] = useState(analysis?.entities?.location || '')
+  const [sortBy, setSortBy] = useState('relevance')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [animating, setAnimating] = useState(false)
 
   const topRoles = analysis?.job_roles?.top_roles || []
+  const rawList = jobs?.jobs || []
+
+  // Client-side sort — no API call needed
+  const sortedList = useMemo(() => {
+    if (sortBy === 'date') {
+      return [...rawList].sort((a, b) => {
+        const da = a.created ? new Date(a.created) : new Date(0)
+        const db = b.created ? new Date(b.created) : new Date(0)
+        return db - da  // newest first
+      })
+    }
+    return rawList  // relevance = original API order
+  }, [rawList, sortBy])
+
+  function handleSortChange(value) {
+    if (value === sortBy) return
+    setAnimating(true)
+    setTimeout(() => {
+      setSortBy(value)
+      setAnimating(false)
+    }, 180)
+  }
 
   async function handleSearch() {
     if (!searchRole) return
@@ -18,6 +42,7 @@ export default function JobsPanel({ jobs: initialJobs, analysis }) {
     try {
       const data = await fetchJobs(searchRole, searchLocation)
       setJobs(data)
+      setSortBy('relevance')  // reset sort on new search
     } catch (err) {
       setError('Failed to fetch jobs. Check your connection.')
     } finally {
@@ -25,34 +50,56 @@ export default function JobsPanel({ jobs: initialJobs, analysis }) {
     }
   }
 
-  const jobList = jobs?.jobs || []
-
   return (
     <div className={styles.container + ' stagger'}>
-      {/* Search controls */}
+
+      {/* Search */}
       <div className={styles.searchCard}>
-        <h3 className={styles.searchTitle}>Search live job listings</h3>
-        <div className={styles.searchRow}>
-          <div className={styles.searchField}>
-            <label className={styles.fieldLabel}>Job Role</label>
-            <div className={styles.inputRow}>
-              <input
-                className={styles.input}
-                value={searchRole}
-                onChange={e => setSearchRole(e.target.value)}
-                placeholder="e.g. Data Scientist"
-              />
-              <div className={styles.quickRoles}>
-                {topRoles.slice(0, 3).map(role => (
+        <div className={styles.searchHeader}>
+          <h3 className={styles.searchTitle}>Search live listings</h3>
+
+          {/* Sort toggle — top right of card */}
+          {rawList.length > 0 && (
+            <div className={styles.sortToggle}>
+              <span className={styles.sortLabel}>Sort by</span>
+              <div className={styles.segmented}>
+                {[
+                  { value: 'relevance', label: 'Relevance' },
+                  { value: 'date',      label: 'Date Posted' },
+                ].map(opt => (
                   <button
-                    key={role.role}
-                    className={`${styles.quickBtn} ${searchRole === role.role ? styles.quickBtnActive : ''}`}
-                    onClick={() => setSearchRole(role.role)}
+                    key={opt.value}
+                    className={`${styles.segBtn} ${sortBy === opt.value ? styles.segBtnActive : ''}`}
+                    onClick={() => handleSortChange(opt.value)}
                   >
-                    {role.role}
+                    {opt.label}
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.searchRow}>
+          <div className={styles.searchField}>
+            <label className={styles.fieldLabel}>Job Role</label>
+            <input
+              className={styles.input}
+              value={searchRole}
+              onChange={e => setSearchRole(e.target.value)}
+              placeholder="e.g. Data Scientist"
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            />
+            <div className={styles.quickRoles}>
+              {topRoles.slice(0, 3).map(role => (
+                <button
+                  key={role.role}
+                  className={`${styles.quickBtn} ${searchRole === role.role ? styles.quickBtnActive : ''}`}
+                  onClick={() => setSearchRole(role.role)}
+                >
+                  {role.role}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -63,6 +110,7 @@ export default function JobsPanel({ jobs: initialJobs, analysis }) {
               value={searchLocation}
               onChange={e => setSearchLocation(e.target.value)}
               placeholder="e.g. Bangalore, Mumbai"
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
             />
           </div>
 
@@ -71,40 +119,45 @@ export default function JobsPanel({ jobs: initialJobs, analysis }) {
             onClick={handleSearch}
             disabled={loading || !searchRole}
           >
-            {loading ? <span className="spinner" /> : 'Search Jobs'}
+            {loading ? <span className="spinner" /> : 'Search'}
           </button>
         </div>
       </div>
 
       {error && <div className={styles.errorBanner}>{error}</div>}
 
-      {/* Status bar */}
+      {/* Status */}
       {jobs && (
         <div className={styles.statusBar}>
           {jobs.status === 'mock' ? (
             <span className={styles.mockNote}>
-              Add Adzuna API keys to .env to see real listings. Showing placeholder.
+              Add Adzuna API keys to .env to see real listings.
             </span>
-          ) : (
+          ) : jobs.status === 'success' ? (
             <span className={styles.resultCount}>
-              {jobs.total_found} jobs found for "{jobs.query?.role}" in {jobs.query?.location}
+              Showing <strong>{sortedList.length}</strong> of{' '}
+              <strong>{jobs.total_found}</strong> listings for{' '}
+              <strong>{jobs.query?.role}</strong> in{' '}
+              <strong>{jobs.query?.location}</strong>
+              {sortBy === 'date' ? ' · sorted by date' : ' · sorted by relevance'}
             </span>
-          )}
+          ) : null}
         </div>
       )}
 
-      {/* Job listings */}
-      {jobList.length === 0 ? (
-        <div className={styles.empty}>No job listings found. Try a different role or location.</div>
+      {/* Listings */}
+      {sortedList.length === 0 ? (
+        <div className={styles.empty}>No listings found. Try a different role or location.</div>
       ) : (
-        <div className={styles.jobList}>
-          {jobList.map((job, i) => (
+        <div className={`${styles.jobList} ${animating ? styles.jobListFading : styles.jobListVisible}`}>
+          {sortedList.map((job, i) => (
             <a
-              key={i}
+              key={`${job.url}-${i}`}
               href={job.url}
               target="_blank"
               rel="noopener noreferrer"
               className={styles.jobCard}
+              style={{ animationDelay: animating ? '0ms' : `${i * 18}ms` }}
             >
               <div className={styles.jobHeader}>
                 <div>
@@ -124,15 +177,21 @@ export default function JobsPanel({ jobs: initialJobs, analysis }) {
                   </span>
                 </div>
               </div>
+
               {job.description && (
                 <p className={styles.jobDesc}>{job.description}</p>
               )}
+
               <div className={styles.jobFooter}>
                 <span className={styles.jobDate}>{job.created}</span>
+                {job.contract && (
+                  <span className={styles.contractTag}>{job.contract}</span>
+                )}
                 <span className={styles.applyLink}>
                   View & Apply
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                    <polyline points="12 5 19 12 12 19"/>
                   </svg>
                 </span>
               </div>

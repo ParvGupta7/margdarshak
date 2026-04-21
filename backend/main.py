@@ -62,6 +62,11 @@ class JobRequest(BaseModel):
     job_title: str
     location: Optional[str] = None
 
+@app.post("/jobs")
+def get_jobs(request: JobRequest):
+    result = fetch_jobs(request.job_title, request.location)
+    return result
+
 
 # ---------- Routes ----------
 

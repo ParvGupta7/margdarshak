@@ -3,54 +3,41 @@ job_matcher.py
 --------------
 PIPELINE STEP 8: Real-Time Job Matching
 
-Fetches live job postings from the Adzuna Jobs API based on:
-  - Best matched job role (from Step 5)
-  - Location extracted from resume (from Step 3) or user-provided
+Fetches up to 50 live job postings from Adzuna sorted by relevance (default).
+Client-side date sort in the UI re-orders by the 'created' field.
 
-Adzuna API:
-  - Free tier: 10,000 calls/month
-  - India endpoint: api.adzuna.com/v1/api/jobs/in/search/1
-  - Supports location-based filtering and keyword search
-
-Returns real job listings with title, company, salary, and apply URL.
+Keeping sort_by off (relevance default) means the two sort options
+in the UI produce visibly different orderings.
 """
 
 import os
 import requests
 from typing import Optional
 
-
-ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
-ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
+ADZUNA_APP_ID   = os.getenv("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY  = os.getenv("ADZUNA_APP_KEY", "")
 ADZUNA_BASE_URL = "https://api.adzuna.com/v1/api/jobs/in/search/1"
 
 
 def fetch_jobs(
     job_title: str,
     location: Optional[str] = None,
-    results_per_page: int = 8
+    results_per_page: int = 50
 ) -> dict:
     """
-    Fetches real job listings from Adzuna for a given role and location.
-
-    Args:
-        job_title: Best matched job role from classifier
-        location: City/location string (from parser or user input)
-        results_per_page: Number of listings to fetch
-
-    Returns:
-        dict with job listings and metadata
+    Fetches job listings from Adzuna sorted by relevance.
+    The frontend handles date sorting client-side.
     """
     if not ADZUNA_APP_ID or not ADZUNA_APP_KEY:
         return _mock_jobs(job_title, location)
 
     params = {
-        "app_id": ADZUNA_APP_ID,
-        "app_key": ADZUNA_APP_KEY,
-        "results_per_page": results_per_page,
-        "what": job_title,
-        "content-type": "application/json",
-        "sort_by": "relevance"
+        "app_id":           ADZUNA_APP_ID,
+        "app_key":          ADZUNA_APP_KEY,
+        "results_per_page": min(int(results_per_page), 50),
+        "what":             job_title,
+        "content-type":     "application/json"
+        # No sort_by param — defaults to Adzuna relevance ranking
     }
 
     if location:
@@ -63,84 +50,66 @@ def fetch_jobs(
 
         jobs = []
         for job in data.get("results", []):
-            salary_min = job.get("salary_min")
-            salary_max = job.get("salary_max")
-            salary_str = _format_salary(salary_min, salary_max)
+            contract = job.get("contract_type", "")
+            contract_label = ""
+            if contract == "permanent":
+                contract_label = "Full-time"
+            elif contract in ("contract", "part_time"):
+                contract_label = "Contract / Internship"
+            if "intern" in job.get("title", "").lower():
+                contract_label = "Internship"
 
             jobs.append({
-                "title": job.get("title", "").strip(),
-                "company": job.get("company", {}).get("display_name", "N/A"),
-                "location": job.get("location", {}).get("display_name", location or "India"),
-                "salary": salary_str,
-                "description": job.get("description", "")[:200] + "..." if job.get("description") else "",
-                "url": job.get("redirect_url", ""),
-                "created": job.get("created", "")[:10],  # Date only
-                "source": "Adzuna"
+                "title":       job.get("title", "").strip(),
+                "company":     job.get("company", {}).get("display_name", "N/A"),
+                "location":    job.get("location", {}).get("display_name", location or "India"),
+                "salary":      _format_salary(job.get("salary_min"), job.get("salary_max")),
+                "description": (job.get("description", "")[:220] + "...") if job.get("description") else "",
+                "url":         job.get("redirect_url", ""),
+                "created":     job.get("created", "")[:10],
+                "contract":    contract_label,
+                "source":      "Adzuna"
             })
 
         return {
-            "jobs": jobs,
+            "jobs":        jobs,
             "total_found": data.get("count", len(jobs)),
-            "query": {"role": job_title, "location": location or "India"},
+            "query": {
+                "role":     job_title,
+                "location": location or "India"
+            },
             "status": "success"
         }
 
     except requests.exceptions.ConnectionError:
-        return {
-            "jobs": [],
-            "status": "error",
-            "message": "Could not connect to jobs API. Check your internet connection."
-        }
+        return {"jobs": [], "status": "error", "message": "Connection failed."}
     except requests.exceptions.HTTPError as e:
-        return {
-            "jobs": [],
-            "status": "error",
-            "message": f"Jobs API error: {str(e)}"
-        }
+        return {"jobs": [], "status": "error", "message": f"API error: {str(e)}"}
     except Exception as e:
-        return {
-            "jobs": [],
-            "status": "error",
-            "message": f"Unexpected error fetching jobs: {str(e)}"
-        }
-    response = requests.get(ADZUNA_BASE_URL, params=params, timeout=10)
-    response.raise_for_status()
-    print("ADZUNA RAW RESPONSE:", response.text[:500])  # ADD THIS LINE
-    data = response.json()
+        return {"jobs": [], "status": "error", "message": str(e)}
 
 
-
-def _format_salary(salary_min, salary_max) -> str:
-    """Formats salary range into a readable string."""
-    if not salary_min and not salary_max:
-        return "Not disclosed"
-    if salary_min and salary_max:
-        return f"₹{int(salary_min):,} - ₹{int(salary_max):,}"
-    if salary_min:
-        return f"₹{int(salary_min):,}+"
-    return f"Up to ₹{int(salary_max):,}"
+def _format_salary(mn, mx) -> str:
+    if not mn and not mx: return "Not disclosed"
+    if mn and mx: return f"₹{int(mn):,} – ₹{int(mx):,}"
+    if mn: return f"₹{int(mn):,}+"
+    return f"Up to ₹{int(mx):,}"
 
 
-def _mock_jobs(job_title: str, location: Optional[str]) -> dict:
-    """
-    Returns placeholder jobs when API keys are not configured.
-    Used during development/demo.
-    """
+def _mock_jobs(job_title, location):
     return {
-        "jobs": [
-            {
-                "title": f"{job_title}",
-                "company": "Demo Company (Configure Adzuna API)",
-                "location": location or "India",
-                "salary": "Competitive",
-                "description": "Configure your Adzuna API keys in the .env file to see real job listings.",
-                "url": f"https://www.linkedin.com/jobs/search/?keywords={job_title.replace(' ', '%20')}",
-                "created": "Today",
-                "source": "Mock"
-            }
-        ],
+        "jobs": [{
+            "title":       job_title,
+            "company":     "Add Adzuna API keys to see real listings",
+            "location":    location or "India",
+            "salary":      "Competitive",
+            "description": "Configure ADZUNA_APP_ID and ADZUNA_APP_KEY in your .env file.",
+            "url":         f"https://www.linkedin.com/jobs/search/?keywords={job_title.replace(' ', '%20')}",
+            "created":     "Today",
+            "contract":    "",
+            "source":      "Mock"
+        }],
         "total_found": 1,
-        "query": {"role": job_title, "location": location or "India"},
-        "status": "mock",
-        "message": "Add ADZUNA_APP_ID and ADZUNA_APP_KEY to .env for real listings"
+        "query":  {"role": job_title, "location": location or "India"},
+        "status": "mock"
     }
