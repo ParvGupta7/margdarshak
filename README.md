@@ -31,7 +31,7 @@ MargDarshak is an NLP-powered resume analysis platform that processes your resum
 | 6. Gap Analysis | gap_analyzer.py | Set subtraction | Python sets |
 | 7. Course Mapping | course_recommender.py | Dictionary lookup with partial match fallback | — |
 | 8. Job Matching | job_matcher.py | REST API call | requests |
-| 9. Chatbot | bot.py | Keyword-based intent classification | — |
+| 9. Chatbot | bot.py | DistilBERT/Keyword-based intent classification | — |
 
 Job role skill requirements are aligned with **O*NET Online** (U.S. Department of Labor, onetonline.org).
 
