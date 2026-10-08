@@ -21,3 +21,6 @@ frontend/dist/
 .vscode/
 .venv/
 backend/chatbot/intent_classifier/model.safetensors
+.env
+.env.*
+!.env.example
