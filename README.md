@@ -1,143 +1,74 @@
-# MargDarshak — AI Resume Analyzer & Career Guidance Platform
+# MargDarshak
 
-MargDarshak is an NLP-powered resume analysis platform that processes your resume through a transparent 9-step pipeline — identifying skills, classifying job roles, finding skill gaps, recommending free courses, and matching live job listings in under 30 seconds.
+A web app that reads a resume and turns it into practical career guidance:
+what skills you already have, which roles suit you, what you are missing,
+where to learn it, and which openings are live right now. A built-in
+assistant answers follow-up questions about your results.
 
----
+> This repository accompanies a research paper that is currently under
+> review. A citation will be added here after publication.
 
-## Features
+## What you get
 
-- **Resume Parsing** — Extracts raw text from PDF using pdfminer.six
-- **NLP Preprocessing** — 7-stage pipeline: lowercase → unicode cleanup → punctuation removal → whitespace normalization → tokenization → stopword removal → lemmatization
-- **Entity Extraction** — Regex for email, phone, LinkedIn, GitHub. spaCy NER for name and location with Indian city fallback
-- **Skill Extraction** — Exact word-boundary matching against 500+ skills across 15 categories
-- **Job Role Classification** — Cosine similarity on skill vectors against O*NET-aligned role definitions
-- **Skill Gap Analysis** — Set subtraction between required skills and resume skills
-- **Course Recommendations** — Missing skills mapped to free Coursera, freeCodeCamp, and official doc resources
-- **Live Job Matching** — Real-time listings from Adzuna API filtered by role and location
-- **Career Chatbot** — Fully local intent classification across 9 intents, no external API
-- **Pipeline Transparency** — Every step's output visible in the UI for demonstration
+- A profile summary (contact details, location, detected skills)
+- A ranked list of suitable roles
+- Missing skills for each role, plus a readiness indicator
+- Free learning links for those skills
+- Current job openings for your best-fit role and city
+- A chat assistant that answers questions using your own results
 
----
+## Getting started
 
-## NLP Pipeline
+You need Python 3.11 or 3.12 and Node.js 18 or newer.
 
-| Step | File | Method | Library |
-|---|---|---|---|
-| 1. Text Extraction | extractor.py | LAParams PDF parsing | pdfminer.six |
-| 2. Preprocessing | preprocessor.py | 7-stage NLP pipeline | NLTK |
-| 3. Entity Extraction | parser.py | Regex + Named Entity Recognition | re, spaCy |
-| 4. Skill Extraction | skill_extractor.py | Exact string matching with word boundaries | Python re |
-| 5. Job Classification | job_classifier.py | Cosine similarity on binary skill vectors | scikit-learn, numpy |
-| 6. Gap Analysis | gap_analyzer.py | Set subtraction | Python sets |
-| 7. Course Mapping | course_recommender.py | Dictionary lookup with partial match fallback | — |
-| 8. Job Matching | job_matcher.py | REST API call | requests |
-| 9. Chatbot | bot.py | Keyword-based intent classification | — |
+**Backend**
 
-Job role skill requirements are aligned with **O*NET Online** (U.S. Department of Labor, onetonline.org).
+    cd backend
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    python -m spacy download en_core_web_sm
+    cp .env.example .env
+    python main.py
 
----
+**Frontend**
 
-## Tech Stack
+    cd frontend
+    npm install
+    npm run dev
 
-| Layer | Technology |
-|---|---|
-| Backend | Python, FastAPI, Uvicorn |
-| NLP | NLTK, spaCy (en_core_web_sm), scikit-learn |
-| PDF Parsing | pdfminer.six |
-| Frontend | React 18, Vite, CSS Modules |
-| Jobs API | Adzuna |
-| Deployment | Render (backend), Vercel (frontend) |
+Then open http://localhost:5173.
 
----
+## Configuration
 
-## Local Setup
+Job listings come from the Adzuna API. Create a free account at
+developer.adzuna.com and put your keys in `backend/.env`:
 
-### Prerequisites
-- Python 3.11 or 3.12
-- Node.js 18+
+    ADZUNA_APP_ID=your_app_id
+    ADZUNA_APP_KEY=your_app_key
 
-### Backend
+Without keys, everything except live job listings still works.
 
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
-cp .env.example .env
-# Add your Adzuna API keys to .env
-python main.py
-```
+## Project layout
 
-### Frontend
+    backend/
+      main.py          API entry point
+      pipeline/        resume processing modules
+      chatbot/         chat assistant
+      data/            skill list, role definitions, course links
+    frontend/src/      React interface
+    evaluation/        datasets and scripts used for the reported results
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Notes
 
-Open http://localhost:5173
+- PDF is the supported resume format. Image upload through OCR is an
+  experimental extra and needs the Tesseract engine installed separately.
+- Role definitions reference O*NET-SOC occupation codes
+  (onetonline.org). The skill lists inside them were compiled by the
+  project authors.
+- The chat assistant uses a small trained classifier. If the model files
+  are missing, it switches to a simpler keyword-based mode.
 
-### Environment Variables
+## Contributing
 
-```
-ADZUNA_APP_ID=your_app_id
-ADZUNA_APP_KEY=your_app_key
-```
-
-Get free Adzuna API keys at developer.adzuna.com (10,000 calls/month free).
-
-### Image Resume OCR
-
-The same `/analyze` endpoint accepts `.jpg`, `.jpeg`, `.png`, and `.webp`
-files. Image resumes are preprocessed in memory and passed through Tesseract
-OCR; the resulting text then uses the existing preprocessing and analysis
-pipeline. PDF uploads continue to use pdfminer.six.
-
-Install the Python OCR dependencies from `backend/requirements.txt` and
-install the Tesseract OCR engine separately:
-
-```bash
-# Windows: install Tesseract OCR and ensure tesseract.exe is on PATH
-# macOS: brew install tesseract
-# Ubuntu/Debian: sudo apt-get install tesseract-ocr
-```
-
-If Tesseract is unavailable, image uploads return a clear configuration error;
-PDF uploads remain unaffected.
-
----
-
-## Project Structure
-
-```
-margdarshak/
-├── backend/
-│   ├── main.py
-│   ├── requirements.txt
-│   ├── pipeline/
-│   │   ├── extractor.py
-│   │   ├── preprocessor.py
-│   │   ├── parser.py
-│   │   ├── skill_extractor.py
-│   │   ├── job_classifier.py
-│   │   ├── gap_analyzer.py
-│   │   ├── course_recommender.py
-│   │   └── job_matcher.py
-│   ├── chatbot/
-│   │   └── bot.py
-│   └── data/
-│       ├── skills_db.py
-│       ├── job_roles.py
-│       └── courses_db.py
-└── frontend/
-    └── src/
-        ├── pages/
-        └── components/
-```
-
----
-
-*Built with FastAPI, React, NLTK, spaCy, scikit-learn, and pdfminer.six*
+Issues and pull requests are welcome.
